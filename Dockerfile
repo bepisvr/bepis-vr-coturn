@@ -1,103 +1,58 @@
-FROM docker.io/tiredofit/alpine:3.19
-LABEL maintainer="Dave Conroy (github.com/tiredofit)"
-# from https://github.com/forsrc/docker-coturn
-ENV COTURN_VERSION=4.5.2 \
-    IMAGE_NAME=tiredofit/coturn \
-    IMAGE_REPO_URL=https://github.com/tiredofit/docker-coturn
+FROM ubuntu:19.10
+ENV DEBIAN_FRONTEND=noninteractive
+# from https://raw.githubusercontent.com/forsrc/docker-coturn/master/apt-get/Dockerfile
+RUN apt-get update
 
-### Build Dependencies
-RUN set -x && \
-    addgroup -g 3478 coturn && \
-    adduser --disabled-password --system --home /var/lib/coturn --shell /sbin/nologin -u 3478 --ingroup coturn coturn && \
-    apk update && \
-    apk upgrade && \
-    apk add -t .coturn-build-deps \
-        build-base \
-        coreutils \
-        autoconf \
-        cmake \
-        g++ \
-        git \
-        hiredis-dev \
-        libevent-dev \
-        libtool \
-        libmicrohttpd-dev \
-        linux-headers \
-        mariadb-connector-c-dev \
-        mongo-c-driver-dev \
-        openssl-dev \
-        postgresql-dev \
-        sqlite-dev \
-        && \
-    \
-### Run Depedencies
-    apk add -t .coturn-run-deps \
-        hiredis \
-        inotify-tools \
-        libcrypto1.1 \
-        libevent \
-        libpq \
-        libssl1.1 \
-        libstdc++ \
-        mariadb-client \
-        mariadb-connector-c \
-        mongo-c-driver \
-        postgresql-client\
-        libmicrohttpd \
-        openssl \
-        sqlite \
-        sqlite-libs \
-        && \
-    \
-### Build Prometheus Clients
-    git clone https://github.com/digitalocean/prometheus-client-c /usr/src/promclient && \
-    cd /usr/src/promclient && \
-    git checkout v0.1.3 && \
-    cd /usr/src/promclient/prom && \
-    TEST=0 cmake -G "Unix Makefiles" \
-                 -DCMAKE_INSTALL_PREFIX=/usr \
-                 -DCMAKE_SKIP_BUILD_RPATH=TRUE \
-                 -DCMAKE_C_FLAGS="-DPROM_LOG_ENABLE -g -O3" \
-                 . \
-                 && \
-    make && \
-    make install && \
-    \
-    cd /usr/src/promclient/promhttp && \
-    sed -i 's/\&promhttp_handler/(MHD_AccessHandlerCallback)\&promhttp_handler/' src/promhttp.c && \
-    cd /usr/src/promclient/promhttp && \
-    TEST=0 cmake -G "Unix Makefiles" \
-                 -DCMAKE_INSTALL_PREFIX=/usr \
-                 -DCMAKE_SKIP_BUILD_RPATH=TRUE \
-                 -DCMAKE_C_FLAGS="-g -O3" \
-                 . \
-                 && \
-        make VERBOSE=1 && \
-        make install && \
-    \
-    ### Compile Coturn
-    mkdir -p /usr/src/coturn && \
-    curl -ssL https://github.com/coturn/coturn/archive/${COTURN_VERSION}.tar.gz | tar xvfz - --strip 1 -C /usr/src/coturn && \
-    cd /usr/src/coturn && \
-    ln -s /usr/lib/pkgconfig/libmariadb.pc /usr/lib/pkgconfig/mariadb.pc && \
-    ./configure --prefix=/usr \
-        --turndbdir=/data \
-        --disable-rpath \
-        --sysconfdir=/etc/coturn \
-        --mandir=/tmp/coturn/man \
-        --docsdir=/tmp/coturn/docs \
-        --examplesdir=/tmp/coturn/examples \
-        && \
-    make && \
-    make install &&\
-    make clean && \
-    \
-### Cleanup
-    apk del .coturn-build-deps && \
-    rm -rf /usr/src/* /var/cache/apk /tmp/*
+RUN apt-get -y install coturn openssl systemd sudo
 
-### Networking Configuration
-EXPOSE 443 3478 3478/udp 3479 5349 5350
+#RUN systemctl enable coturn
 
-### Files Addition
-COPY install /
+RUN sed -i 's/#TURNSERVER_ENABLED=1/TURNSERVER_ENABLED=1/g' /etc/default/coturn
+
+RUN mkdir -p /etc/coturn
+RUN openssl genrsa -out /etc/coturn/turn_server_pkey.pem 1024
+RUN openssl req -new -key /etc/coturn/turn_server_pkey.pem -out /etc/coturn/turn_server.csr -subj /C=CN/O="forsrc"/OU="forsrc"/CN="coturn.forsrc.com"/ST="forsrc"/L="forsrc"
+RUN openssl x509 -req -in /etc/coturn/turn_server.csr -signkey /etc/coturn/turn_server_pkey.pem -out /etc/coturn/turn_server_cert.pem
+
+RUN sed -i 's@#cert=/usr\/local/etc/turn_server_cert.pem@cert=/etc/coturn/turn_server_cert.pem@g' /etc/turnserver.conf
+RUN sed -i 's@#pkey=/usr/local/etc/turn_server_pkey.pem@pkey=/etc/coturn/turn_server_pkey.pem@g'  /etc/turnserver.conf
+RUN sed -i 's@#server-name=blackdow.carleon.gov@server-name=coturn.forsrc.com@g'                  /etc/turnserver.conf
+RUN sed -i 's@#realm=mycompany.org@realm=coturn.forsrc.com@g'                                             /etc/turnserver.conf
+RUN sed -i 's@#user=username2:password2@user=forsrc:0xd667eb7aa3ebe3af48ee1c3330941e06@g'         /etc/turnserver.conf
+
+RUN mkdir -p /var/lib/turn/
+RUN mkdir -p /var/run/
+
+
+RUN echo '#!/bin/bash'                        >  /docker-entrypoint.sh
+RUN echo "if [ \"\${1:0:1}\" == '-' ]; then"  >> /docker-entrypoint.sh
+RUN echo '  set -- turnserver "$@"'           >> /docker-entrypoint.sh
+RUN echo 'fi'                                 >> /docker-entrypoint.sh
+RUN echo 'exec $(eval "echo $@")'             >> /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+ENV USER=forsrc
+ARG PASSWD=forsrc
+RUN apt-get update
+RUN apt-get install -y sudo
+RUN useradd -m --shell /bin/bash $USER && \
+    echo "$USER:$PASSWD" | chpasswd && \
+    echo "$USER ALL=(ALL) ALL" >> /etc/sudoers
+RUN apt-get clean
+
+RUN chown $USER:$USER /var/lib/turn/
+RUN chown $USER:$USER /var/run/
+RUN chown -R forsrc:forsrc /etc/coturn
+
+WORKDIR /home/$USER
+USER $USER
+
+
+EXPOSE 3478 3478/udp
+EXPOSE 5347 5347/udp
+
+VOLUME ["/var/lib/coturn"]
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
+
+CMD ["--log-file=stdout", "-c", "/etc/turnserver.conf", "$COTURN_ARGS"]
