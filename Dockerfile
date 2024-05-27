@@ -1,4 +1,4 @@
-FROM ubuntu:19.10
+FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 # from https://raw.githubusercontent.com/forsrc/docker-coturn/master/apt-get/Dockerfile
 RUN apt-get update
