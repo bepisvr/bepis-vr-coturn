@@ -8,7 +8,7 @@ RUN apt-get -y install coturn openssl systemd sudo
 ARG AUTH_SECRET
 ARG REALM_NAME
 
-RUN echo $'\n\
+RUN echo '\n\
 use-auth-secret\n\
 static-auth-secret='"$AUTH_SECRET"'\n\
 realm='"$REALM_NAME" > /etc/turnserver.conf
