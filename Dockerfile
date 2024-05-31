@@ -11,7 +11,7 @@ ARG REALM_NAME
 RUN echo $'\n\
 use-auth-secret\n\
 static-auth-secret='"$AUTH_SECRET"'\n\
-realm='"$REALM_NAME" >> /etc/turnserver.conf
+realm='"$REALM_NAME" > /etc/turnserver.conf
 
 RUN cat /etc/turnserver.conf
 
