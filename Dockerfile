@@ -1,6 +1,6 @@
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
-# from https://raw.githubusercontent.com/forsrc/docker-coturn/master/apt-get/Dockerfile
+# modified from https://raw.githubusercontent.com/forsrc/docker-coturn/master/apt-get/Dockerfile
 RUN apt-get update
 
 RUN apt-get -y install coturn openssl systemd sudo
@@ -19,21 +19,6 @@ RUN echo '  set -- turnserver "$@"'           >> /docker-entrypoint.sh
 RUN echo 'fi'                                 >> /docker-entrypoint.sh
 RUN echo 'exec $(eval "echo $@")'             >> /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
-
-#ENV USER=forsrc
-#ARG PASSWD=forsrc
-#RUN apt-get update
-#RUN apt-get install -y sudo
-#RUN useradd -m --shell /bin/bash $USER && \
-#    echo "$USER:$PASSWD" | chpasswd && \
-#    echo "$USER ALL=(ALL) ALL" >> /etc/sudoers
-#RUN apt-get clean
-
-#RUN chown $USER:$USER /var/lib/turn/
-#RUN chown $USER:$USER /var/run/
-
-#WORKDIR /home/$USER
-#USER $USER
 
 EXPOSE 3478 3478/udp
 EXPOSE 5347 5347/udp
